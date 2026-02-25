@@ -22,7 +22,13 @@
         // 你的正確 ID
         const ssID = '1j7quZPgHFltMpvnHJe-6WRb4sKJyBK0rRIQB4aG6K2Y';
         // 使用 Google Visualization API，這對 GitHub Pages 最穩定
-        const url = `https://docs.google.com/spreadsheets/d/${ssID}/export?format=csv&gid=0`;
+        // 使用 Google Sheets 的「發佈到網路」專用 CSV 連結，這是目前穩定性最高的做法
+const url = `https://docs.google.com/spreadsheets/d/${ssID}/pub?output=csv`;
+
+// 加上一個隨機參數防止 Google 給我們舊的（快取）錯誤資料
+const finalUrl = url + '&t=' + new Date().getTime();
+
+fetch(finalUrl)
         fetch(url)
             .then(res => {
                 if (!res.ok) throw new Error('Google 門沒開 (請確認共用權限為任何人)');
@@ -48,4 +54,5 @@
     </script>
 </body>
 </html>
+
 
