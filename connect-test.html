@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Nature Glitch 母版連線測試</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; background-color: #f4f4f4; }
+        .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-weight: bold; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>雲端母版：連線診斷</h1>
+        <div id="status-box" class="status">正在發起跨網域請求...</div>
+        <div id="data-display">等待資料中...</div>
+    </div>
+
+    <script>
+        // 這是你確認過的正確 ID (結尾為 Y)
+        const ssID = '1j7quZPgHFltMpvnHJe-6WRb4sKJyBK0rRIQB4aG6K2Y';
+        // 使用 Google Visualization API 格式，這在網頁環境最穩
+        const url = `https://docs.google.com/spreadsheets/d/${ssID}/gviz/tq?tqx=out:csv`;
+
+        fetch(url)
+            .then(res => {
+                if (!res.ok) throw new Error('Google 伺服器拒絕連線');
+                return res.text();
+            })
+            .then(data => {
+                document.getElementById('status-box').className = 'status success';
+                document.getElementById('status-box').innerHTML = '✅ 連線成功！已穿透安全性限制。';
+                
+                // 簡單解析 CSV 並顯示 C 欄內容
+                const rows = data.split('\n').map(r => r.split(','));
+                let listHtml = '<ul>';
+                for (let i = 1; i < rows.length; i++) {
+                    if (rows[i][2]) {
+                        const cleanText = rows[i][2].replace(/"/g, "");
+                        listHtml += `<li>抓取到訂單內容：${cleanText}</li>`;
+                    }
+                }
+                listHtml += '</ul>';
+                document.getElementById('data-display').innerHTML = listHtml;
+            })
+            .catch(err => {
+                document.getElementById('status-box').className = 'status error';
+                document.getElementById('status-box').innerHTML = '❌ 連線失敗：' + err.message;
+            });
+    </script>
+</body>
+</html>
