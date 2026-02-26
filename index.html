@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OrderEase 點易 - 牛肉麵</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#1a237e;--orange:#ff6d00;}
+body{font-family:"Noto Sans TC",sans-serif;background:linear-gradient(135deg,#4a3528 0%,#2d1f18 100%);min-height:100vh;padding-bottom:60px;}
+#sticky{position:fixed;top:0;left:0;right:0;background:rgba(45,31,24,.95);color:#f5e6d3;text-align:center;padding:12px;font-weight:700;z-index:9999;border-bottom:2px solid var(--orange);display:none;}
+.card{background:rgba(245,230,211,.98);border:1px solid #c4a574;border-radius:15px;box-shadow:0 4px 10px rgba(0,0,0,.3);}
+.pagerBtn{width:44px;height:44px;border-radius:999px;border:2px solid var(--blue);color:var(--blue);font-weight:900;font-size:22px;display:flex;align-items:center;justify-content:center;}
+.pagerBtn:active{transform:scale(.96);}
+</style>
+</head>
+
+<body class="antialiased">
+<div id="sticky">
+  <span id="t_orderid">您的單號：</span><span id="orderNum" style="color:var(--orange);"></span>
+  <button id="btnNew" class="ml-3 text-xs bg-red-700 text-white px-2 py-1 rounded" onclick="newCustomer()">新顧客/結帳</button>
+</div>
+
+<div class="max-w-md mx-auto px-4 py-6">
+  <header class="bg-white rounded-2xl p-6 mb-6 text-center shadow-lg">
+    <div class="flex items-center justify-center gap-3 mb-4">
+      <div style="background:var(--blue);width:35px;height:35px;border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;">
+        <span style="color:#fff;font-size:20px;">✔</span>
+        <div style="position:absolute;top:-2px;right:-2px;background:var(--orange);width:12px;height:12px;border-radius:50%;border:2px solid #fff;"></div>
+      </div>
+      <div class="font-bold text-2xl"><span style="color:var(--blue);">OrderEase</span><span style="color:var(--orange);">點易</span></div>
+    </div>
+
+    <div class="inline-flex bg-gray-100 rounded-full p-1 text-xs">
+      <button id="btnEn" class="px-4 py-2 rounded-full text-gray-500" onclick="setLang('en')">English</button>
+      <button id="btnZh" class="px-4 py-2 rounded-full bg-blue-700 text-white" onclick="setLang('zh')">中文</button>
+    </div>
+  </header>
+
+  <main class="card p-4 space-y-4">
+    <div class="bg-white/50 p-3 rounded-xl border border-orange-200">
+      <label id="t_table" class="block text-sm font-bold mb-1">📍 桌號 (內用請填寫)：</label>
+      <input id="table" class="w-full p-2 rounded-lg border border-gray-300 focus:outline-none" placeholder="例如：A1">
+    </div>
+
+    <div class="flex items-center justify-between">
+      <div class="font-bold text-slate-700" id="t_menu">菜單</div>
+      <div class="flex items-center gap-2">
+        <button class="pagerBtn" id="prevBtn" onclick="prevPage()">‹</button>
+        <div class="text-xs text-slate-600 font-bold" id="pageInfo"></div>
+        <button class="pagerBtn" id="nextBtn" onclick="nextPage()">›</button>
+      </div>
+    </div>
+
+    <div id="menu" class="space-y-3"></div>
+
+    <div class="border-t-2 border-gray-200 pt-4 mt-2">
+      <div class="flex justify-between items-center mb-4">
+        <span id="t_total" class="font-bold text-gray-600">總金額</span>
+        <span id="total" class="text-2xl font-bold text-orange-600">$0</span>
+      </div>
+      <button id="submit" class="w-full bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 transition" onclick="submitOrder()">確認送出訂單</button>
+    </div>
+  </main>
+</div>
+
+<script>
+const scriptURL="https://script.google.com/macros/s/AKfycby5EEI2YgAPL5YXRbqdedZ_eJf1VWU2ACNn861AqE4n6egJ1-A1a1wZBm9lZyinh_k/exec";
+
+let menuItems=[]; // ✅ 改成雲端菜單
+let lang=localStorage.getItem("lang")||"zh";
+let cart={};
+let orderId=localStorage.getItem("orderId")||"";
+let page=0;
+const perPage=6;
+
+const T={
+  zh:{orderid:"您的單號：",newbtn:"新顧客/結帳",table:"📍 桌號 (內用請填寫)：",ph:"例如：A1",menu:"菜單",total:"總金額",send:"確認送出訂單",sending:"⚡ 傳送中...",need:"請先選擇餐點！",ok:"✅ 訂單成功！單號：",clear:"清除單號並重新點餐嗎？",loadFail:"載入菜單失敗："},
+  en:{orderid:"Order ID: ",newbtn:"New Customer",table:"📍 Table No. (Dine-in):",ph:"e.g., A1",menu:"Menu",total:"Total",send:"Send Order",sending:"⚡ Sending...",need:"Please select items!",ok:"✅ Order Sent! ID: ",clear:"Clear order ID and start over?",loadFail:"Failed to load menu: "}
+};
+
+// ✅ 從雲端抓菜單（Google Sheet → GAS → 前台）
+async function loadMenuFromCloud(){
+  try{
+    const r=await fetch(scriptURL+"?action=menu",{cache:"no-store"});
+    const data=await r.json();
+    if(!data.ok) throw new Error(data.error || "menu api error");
+
+    // 轉成前台格式
+    menuItems=(data.menu||[]).map((it,i)=>({
+      id:"m"+i,
+      zh:it.name,
+      en:it.name,     // 先同名，後續要英文再擴充
+      price:Number(it.price||0)
+    }));
+
+    // 初始化購物車 key
+    menuItems.forEach(it=>{ if(cart[it.id]===undefined) cart[it.id]=0; });
+
+    page=0;
+    renderMenu();
+    calcTotal();
+  }catch(e){
+    alert((T[lang].loadFail)+(e && e.message ? e.message : e));
+  }
+}
+
+function setLang(x){
+  lang=x; localStorage.setItem("lang",lang);
+  document.getElementById("btnEn").className=lang==="en"?"px-4 py-2 rounded-full bg-blue-700 text-white":"px-4 py-2 rounded-full text-gray-500";
+  document.getElementById("btnZh").className=lang==="zh"?"px-4 py-2 rounded-full bg-blue-700 text-white":"px-4 py-2 rounded-full text-gray-500";
+  applyText(); renderMenu(); // ✅ 只重畫 UI，不重抓菜單
+}
+
+function applyText(){
+  const t=T[lang];
+  document.getElementById("t_orderid").innerText=t.orderid;
+  document.getElementById("btnNew").innerText=t.newbtn;
+  document.getElementById("t_table").innerText=t.table;
+  document.getElementById("table").placeholder=t.ph;
+  document.getElementById("t_menu").innerText=t.menu;
+  document.getElementById("t_total").innerText=t.total;
+  document.getElementById("submit").innerText=t.send;
+}
+
+function showSticky(){
+  document.getElementById("orderNum").innerText=orderId;
+  document.getElementById("sticky").style.display="block";
+  document.body.style.paddingTop="60px";
+}
+
+function newCustomer(){
+  if(confirm(T[lang].clear)){
+    localStorage.removeItem("orderId");
+    location.reload();
+  }
+}
+
+function renderMenu(){
+  const menu=document.getElementById("menu");
+  menu.innerHTML="";
+
+  if(!menuItems.length){
+    menu.innerHTML=`<div class="text-sm text-slate-600">（目前沒有菜單資料，請到試算表「菜單」新增品項）</div>`;
+    document.getElementById("pageInfo").innerText="0/0";
+    document.getElementById("prevBtn").style.visibility="hidden";
+    document.getElementById("nextBtn").style.visibility="hidden";
+    return;
+  }
+
+  const start=page*perPage;
+  const slice=menuItems.slice(start,start+perPage);
+
+  slice.forEach(item=>{
+    if(cart[item.id]===undefined) cart[item.id]=0;
+    const name=(lang==="zh")?item.zh:item.en;
+    menu.innerHTML+=`
+      <div class="flex items-center justify-between p-2 border-b border-gray-100">
+        <div>
+          <b class="text-slate-800">${name}</b><br>
+          <span class="text-orange-600 font-bold">$${item.price}</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <button class="w-8 h-8 rounded-full border border-blue-800 text-blue-800 font-bold" onclick="qty('${item.id}',-1)">-</button>
+          <span class="font-bold w-5 text-center" id="q_${item.id}">${cart[item.id]}</span>
+          <button class="w-8 h-8 rounded-full border border-blue-800 text-blue-800 font-bold" onclick="qty('${item.id}',1)">+</button>
+        </div>
+      </div>
+    `;
+  });
+
+  const totalPages=Math.max(1,Math.ceil(menuItems.length/perPage));
+  document.getElementById("pageInfo").innerText=`${page+1}/${totalPages}`;
+
+  document.getElementById("prevBtn").style.visibility=(page===0)?"hidden":"visible";
+  const nextBtn=document.getElementById("nextBtn");
+  nextBtn.style.visibility="visible";
+  if(page===totalPages-1){
+    nextBtn.innerText="‹";
+  }else{
+    nextBtn.innerText="›";
+  }
+}
+
+function prevPage(){ if(page>0){ page--; renderMenu(); } }
+function nextPage(){
+  const totalPages=Math.max(1,Math.ceil(menuItems.length/perPage));
+  if(page===totalPages-1){ page=0; } else { page++; }
+  renderMenu();
+}
+
+function calcTotal(){
+  let sum=0;
+  menuItems.forEach(it=>sum+=(cart[it.id]||0)*it.price);
+  document.getElementById("total").innerText=`$${sum}`;
+  return sum;
+}
+
+function qty(id,delta){
+  cart[id]=Math.max(0,(cart[id]||0)+delta);
+  const el=document.getElementById("q_"+id);
+  if(el) el.innerText=cart[id];
+  calcTotal();
+}
+
+async function submitOrder(){
+  const t=T[lang];
+  const table=(document.getElementById("table").value.trim())||"外帶";
+
+  let lines=[];
+  let total=0;
+  menuItems.forEach(it=>{
+    const q=cart[it.id]||0;
+    if(q>0){
+      lines.push(`${it.zh} x${q}`);  // ✅ 永遠送中文
+      total+=q*it.price;
+    }
+  });
+  if(total===0){ alert(t.need); return; }
+
+  if(!orderId){
+    const d=new Date();
+    const rp=Math.floor(Math.random()*9000+1000);
+    orderId=`${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${rp}`;
+    localStorage.setItem("orderId",orderId);
+  }
+
+  const btn=document.getElementById("submit");
+  btn.innerText=t.sending; btn.disabled=true;
+
+  try{
+    await fetch(scriptURL,{method:"POST",mode:"no-cors",body:JSON.stringify({
+      orderId:orderId,
+      tableNumber:table,
+      items:lines.join("\n"),
+      total:total
+    })});
+    alert(t.ok+orderId);
+    showSticky();
+
+    // 清空購物車
+    Object.keys(cart).forEach(k=>cart[k]=0);
+    document.getElementById("total").innerText="$0";
+    document.getElementById("table").value="";
+    renderMenu();
+  }catch(e){
+    alert("送出失敗，請檢查 Apps Script 部署權限");
+  }finally{
+    btn.innerText=t.send; btn.disabled=false;
+  }
+}
+
+window.onload=function(){
+  applyText();
+  setLang(lang);
+  loadMenuFromCloud();  // ✅ 只在載入時抓一次雲端菜單
+  if(orderId){ showSticky(); }
+};
+</script>
+</body>
+</html>
