@@ -1,58 +1,123 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Nature Glitch 母版連線診斷</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; background-color: #f0f2f5; text-align: center; }
-        .card { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 500px; margin: auto; }
-        .status { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; }
-        .success { background: #e6fffa; color: #234e52; border: 1px solid #38b2ac; }
-        .error { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h1>雲端母版：連線診斷</h1>
-        <div id="status-box" class="status">正在從 GitHub 對接 Google...</div>
-        <div id="data-display">等待雲端回應中...</div>
-    </div>
+// ======== 設定區（只改這兩個）========
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId(); // 或填死你的ID
+const SHEET_MENU = "菜單";
+const SHEET_ORDERS = "工作表1";
 
-    <script>
-        // 你的正確 ID
-        const ssID = '1j7quZPgHFltMpvnHJe-6WRb4sKJyBK0rRIQB4aG6K2Y';
-        // 使用 Google Visualization API，這對 GitHub Pages 最穩定
-        // 使用 Google Sheets 的「發佈到網路」專用 CSV 連結，這是目前穩定性最高的做法
-const url = `https://docs.google.com/spreadsheets/d/${ssID}/pub?output=csv`;
+// ======== GET：給前端讀菜單 / 測試連線 ========
+function doGet(e) {
+  const action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "ping";
 
-// 加上一個隨機參數防止 Google 給我們舊的（快取）錯誤資料
-const finalUrl = url + '&t=' + new Date().getTime();
+  if (action === "ping") {
+    return json({ ok: true, msg: "backend alive" });
+  }
 
-fetch(finalUrl)
-        fetch(url)
-            .then(res => {
-                if (!res.ok) throw new Error('Google 門沒開 (請確認共用權限為任何人)');
-                return res.text();
-            })
-            .then(csvData => {
-                document.getElementById('status-box').className = 'status success';
-                document.getElementById('status-box').innerHTML = '✅ 連線成功！雲端大腦已接通。';
-                
-                const rows = csvData.split('\n');
-                let html = '<ul style="text-align: left;">';
-                for (let i = 1; i < Math.min(rows.length, 5); i++) {
-                    const cleanText = rows[i].replace(/"/g, "");
-                    if(cleanText) html += `<li>抓取資料：${cleanText.split(',')[2]}</li>`;
-                }
-                html += '</ul>';
-                document.getElementById('data-display').innerHTML = html;
-            })
-            .catch(err => {
-                document.getElementById('status-box').className = 'status error';
-                document.getElementById('status-box').innerHTML = '❌ 讀取失敗：' + err.message;
-            });
-    </script>
-</body>
-</html>
+  if (action === "menu") {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName(SHEET_MENU);
+    if (!sh) return json({ ok:false, error:`找不到分頁：${SHEET_MENU}` });
+
+    // 菜單格式：A:分類 B:品名 C:價格 D:上架(1/0)
+    const values = sh.getDataRange().getValues();
+    if (values.length < 2) return json({ ok:true, menu: [] });
+
+    const header = values[0];
+    const rows = values.slice(1);
+
+    // 自動容錯：即使表頭不完全一致也能跑
+    const idx = {
+      category: header.indexOf("分類"),
+      name: header.indexOf("品名"),
+      price: header.indexOf("價格"),
+      on: header.indexOf("上架"),
+    };
+
+    const menu = rows
+      .map(r => ({
+        category: idx.category >= 0 ? r[idx.category] : r[0],
+        name: idx.name >= 0 ? r[idx.name] : r[1],
+        price: Number(idx.price >= 0 ? r[idx.price] : r[2]) || 0,
+        on: (idx.on >= 0 ? r[idx.on] : r[3]) === 1 || (idx.on >= 0 ? r[idx.on] : r[3]) === "1" || (idx.on >= 0 ? r[idx.on] : r[3]) === true
+      }))
+      .filter(x => x.name && x.price >= 0 && x.on);
+
+    return json({ ok:true, menu });
+  }
+
+  return json({ ok:false, error:"unknown action" });
+}
+
+// ======== POST：前端送訂單（後端算總金額，防作弊）========
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents || "{}");
+    const table = String(body.table || "");
+    const items = Array.isArray(body.items) ? body.items : []; 
+    // items: [{name:"鹹酥雞", qty:2}, ...]
+
+    // 讀菜單→建立價格表（後端算總額，前端改不了）
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const menuSh = ss.getSheetByName(SHEET_MENU);
+    const orderSh = ss.getSheetByName(SHEET_ORDERS);
+    if (!menuSh) return json({ ok:false, error:`找不到分頁：${SHEET_MENU}` });
+    if (!orderSh) return json({ ok:false, error:`找不到分頁：${SHEET_ORDERS}` });
+
+    const m = menuSh.getDataRange().getValues();
+    const mh = m[0];
+    const idxName = mh.indexOf("品名") >= 0 ? mh.indexOf("品名") : 1;
+    const idxPrice = mh.indexOf("價格") >= 0 ? mh.indexOf("價格") : 2;
+    const idxOn = mh.indexOf("上架") >= 0 ? mh.indexOf("上架") : 3;
+
+    const priceMap = new Map();
+    for (let i=1;i<m.length;i++){
+      const name = m[i][idxName];
+      const price = Number(m[i][idxPrice]) || 0;
+      const on = m[i][idxOn];
+      const enabled = (on===1||on==="1"||on===true);
+      if (name && enabled) priceMap.set(String(name), price);
+    }
+
+    // 計算總金額 + 組字串
+    let total = 0;
+    const lines = [];
+    for (const it of items){
+      const n = String(it.name || "");
+      const q = Number(it.qty || 0);
+      if (!n || q<=0) continue;
+      if (!priceMap.has(n)) continue; // 不在菜單的直接忽略（防亂送）
+      const p = priceMap.get(n);
+      total += p * q;
+      lines.push(`${n} x${q}`);
+    }
+
+    if (lines.length === 0) return json({ ok:false, error:"沒有有效品項" });
+
+    // 寫訂單：A訂單時間 B取餐單號 C點購內容 D總金額 E備註(狀態)
+    const now = Utilities.formatDate(new Date(), "GMT+8", "yyyy/MM/dd HH:mm:ss");
+    const orderId = "OD" + Utilities.formatDate(new Date(), "GMT+8", "MMddHHmmss");
+
+    // 插入第2列
+    orderSh.insertRowBefore(2);
+    orderSh.getRange(2,1,1,5).setValues([[
+      now,
+      orderId,
+      (table ? `【桌號：${table}】\n` : "【外帶】\n") + lines.join("\n"),
+      `${total} 元`,
+      "待處理"
+    ]]);
+
+    return json({ ok:true, orderId, total });
+
+  } catch(err){
+    return json({ ok:false, error:String(err) });
+  }
+}
+
+// ======== 工具：統一回 JSON（避免亂跳頁）========
+function json(obj){
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 
 
