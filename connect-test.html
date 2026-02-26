@@ -1,123 +1,49 @@
-// ======== 設定區（只改這兩個）========
-const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId(); // 或填死你的ID
-const SHEET_MENU = "菜單";
-const SHEET_ORDERS = "工作表1";
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>母版連線診斷</title>
+  <style>
+    body{font-family:system-ui,-apple-system,"Microsoft JhengHei",sans-serif;background:#f6f7fb;padding:24px}
+    .card{max-width:680px;margin:0 auto;background:#fff;border-radius:14px;padding:22px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+    .ok{background:#e9f8ef;color:#0f5132;border:1px solid #bfe5cc;padding:10px 12px;border-radius:10px;margin-top:14px;white-space:pre-wrap}
+    .bad{background:#fdecea;color:#842029;border:1px solid #f5c2c7;padding:10px 12px;border-radius:10px;margin-top:14px;white-space:pre-wrap}
+    code{background:#f1f3f5;padding:2px 6px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>雲端母版：連線診斷</h2>
+    <div>測試 Apps Script 是否活著（ping）</div>
+    <div id="box">連線中…</div>
 
-// ======== GET：給前端讀菜單 / 測試連線 ========
-function doGet(e) {
-  const action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "ping";
+    <hr style="margin:18px 0;border:none;border-top:1px solid #eee" />
+    <div style="font-size:13px;color:#666">
+      目前測試的後台：<br />
+      <code id="u"></code>
+    </div>
+  </div>
 
-  if (action === "ping") {
-    return json({ ok: true, msg: "backend alive" });
-  }
+<script>
+  // ★把這裡換成你的 Apps Script Web App /exec
+  const GAS_URL = "https://script.google.com/macros/s/AKfycby5EEI2YgAPL5YXRbqdedZ_eJf1VWU2ACNn861AqE4n6egJ1-A1a1wZBm9lZyinh_k/exec";
 
-  if (action === "menu") {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sh = ss.getSheetByName(SHEET_MENU);
-    if (!sh) return json({ ok:false, error:`找不到分頁：${SHEET_MENU}` });
+  document.getElementById("u").textContent = GAS_URL;
 
-    // 菜單格式：A:分類 B:品名 C:價格 D:上架(1/0)
-    const values = sh.getDataRange().getValues();
-    if (values.length < 2) return json({ ok:true, menu: [] });
-
-    const header = values[0];
-    const rows = values.slice(1);
-
-    // 自動容錯：即使表頭不完全一致也能跑
-    const idx = {
-      category: header.indexOf("分類"),
-      name: header.indexOf("品名"),
-      price: header.indexOf("價格"),
-      on: header.indexOf("上架"),
-    };
-
-    const menu = rows
-      .map(r => ({
-        category: idx.category >= 0 ? r[idx.category] : r[0],
-        name: idx.name >= 0 ? r[idx.name] : r[1],
-        price: Number(idx.price >= 0 ? r[idx.price] : r[2]) || 0,
-        on: (idx.on >= 0 ? r[idx.on] : r[3]) === 1 || (idx.on >= 0 ? r[idx.on] : r[3]) === "1" || (idx.on >= 0 ? r[idx.on] : r[3]) === true
-      }))
-      .filter(x => x.name && x.price >= 0 && x.on);
-
-    return json({ ok:true, menu });
-  }
-
-  return json({ ok:false, error:"unknown action" });
-}
-
-// ======== POST：前端送訂單（後端算總金額，防作弊）========
-function doPost(e) {
-  try {
-    const body = JSON.parse(e.postData.contents || "{}");
-    const table = String(body.table || "");
-    const items = Array.isArray(body.items) ? body.items : []; 
-    // items: [{name:"鹹酥雞", qty:2}, ...]
-
-    // 讀菜單→建立價格表（後端算總額，前端改不了）
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const menuSh = ss.getSheetByName(SHEET_MENU);
-    const orderSh = ss.getSheetByName(SHEET_ORDERS);
-    if (!menuSh) return json({ ok:false, error:`找不到分頁：${SHEET_MENU}` });
-    if (!orderSh) return json({ ok:false, error:`找不到分頁：${SHEET_ORDERS}` });
-
-    const m = menuSh.getDataRange().getValues();
-    const mh = m[0];
-    const idxName = mh.indexOf("品名") >= 0 ? mh.indexOf("品名") : 1;
-    const idxPrice = mh.indexOf("價格") >= 0 ? mh.indexOf("價格") : 2;
-    const idxOn = mh.indexOf("上架") >= 0 ? mh.indexOf("上架") : 3;
-
-    const priceMap = new Map();
-    for (let i=1;i<m.length;i++){
-      const name = m[i][idxName];
-      const price = Number(m[i][idxPrice]) || 0;
-      const on = m[i][idxOn];
-      const enabled = (on===1||on==="1"||on===true);
-      if (name && enabled) priceMap.set(String(name), price);
+  (async () => {
+    const box = document.getElementById("box");
+    try {
+      const r = await fetch(GAS_URL + "?action=ping", { cache: "no-store" });
+      const t = await r.text();
+      if (!r.ok) throw new Error("HTTP " + r.status + "\n" + t);
+      box.className = "ok";
+      box.textContent = "✅ 連線成功\n" + t;
+    } catch (e) {
+      box.className = "bad";
+      box.textContent = "❌ 連線失敗\n" + (e && e.message ? e.message : e);
     }
-
-    // 計算總金額 + 組字串
-    let total = 0;
-    const lines = [];
-    for (const it of items){
-      const n = String(it.name || "");
-      const q = Number(it.qty || 0);
-      if (!n || q<=0) continue;
-      if (!priceMap.has(n)) continue; // 不在菜單的直接忽略（防亂送）
-      const p = priceMap.get(n);
-      total += p * q;
-      lines.push(`${n} x${q}`);
-    }
-
-    if (lines.length === 0) return json({ ok:false, error:"沒有有效品項" });
-
-    // 寫訂單：A訂單時間 B取餐單號 C點購內容 D總金額 E備註(狀態)
-    const now = Utilities.formatDate(new Date(), "GMT+8", "yyyy/MM/dd HH:mm:ss");
-    const orderId = "OD" + Utilities.formatDate(new Date(), "GMT+8", "MMddHHmmss");
-
-    // 插入第2列
-    orderSh.insertRowBefore(2);
-    orderSh.getRange(2,1,1,5).setValues([[
-      now,
-      orderId,
-      (table ? `【桌號：${table}】\n` : "【外帶】\n") + lines.join("\n"),
-      `${total} 元`,
-      "待處理"
-    ]]);
-
-    return json({ ok:true, orderId, total });
-
-  } catch(err){
-    return json({ ok:false, error:String(err) });
-  }
-}
-
-// ======== 工具：統一回 JSON（避免亂跳頁）========
-function json(obj){
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-
-
+  })();
+</script>
+</body>
+</html>
