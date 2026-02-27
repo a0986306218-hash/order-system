@@ -88,11 +88,11 @@ async function loadMenuFromCloud(){
 
     // 轉成前台格式
     menuItems=(data.menu||[]).map((it,i)=>({
-      id:"m"+i,
-      zh:it.name,
-      en:it.name,     // 先同名，後續要英文再擴充
-      price:Number(it.price||0)
-    }));
+  id:"m"+i,
+  zh: it.name,
+  en: (it.en && String(it.en).trim()) ? String(it.en).trim() : it.name,
+  price:Number(it.price||0)
+}));
 
     // 初始化購物車 key
     menuItems.forEach(it=>{ if(cart[it.id]===undefined) cart[it.id]=0; });
