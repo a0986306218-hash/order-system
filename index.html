@@ -229,16 +229,43 @@ async function submitOrder(){
   btn.innerText=t.sending; btn.disabled=true;
 
   try{
-    await fetch(scriptURL,{method:"POST",mode:"no-cors",body:JSON.stringify({
-      orderId:orderId,
-      tableNumber:table,
-      items:lines.join("\n"),
-      total:total
-    })});
-    alert(t.ok+orderId);
-    showSticky();
+    const btn = document.getElementById("submit");
+btn.innerText = t.sending;
+btn.disabled = true;
 
-    // 清空購物車
+try {
+  const res = await fetch(scriptURL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "order",
+      orderId: orderId,
+      tableNumber: table,
+      items: lines.join("\n"),
+      total: total
+    })
+  });
+
+  const data = await res.json(); // ⭐ 可以知道後端是否成功
+  if (!data.ok) throw new Error(data.error || "order failed");
+
+  alert(t.ok + (data.orderId || orderId));
+  showSticky();
+
+  // ⭐ 成功才清空購物車（商用關鍵）
+  Object.keys(cart).forEach(k => cart[k] = 0);
+  document.getElementById("total").innerText = "$0";
+  document.getElementById("table").value = "";
+  renderMenu();
+
+} catch (e) {
+  alert(lang === "en"
+    ? "Send failed, please try again."
+    : "送出失敗，請重試");
+} finally {
+  btn.innerText = t.send;
+  btn.disabled = false;
+}
     Object.keys(cart).forEach(k=>cart[k]=0);
     document.getElementById("total").innerText="$0";
     document.getElementById("table").value="";
