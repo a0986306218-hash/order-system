@@ -234,17 +234,17 @@ btn.innerText = t.sending;
 btn.disabled = true;
 
 try {
-  const res = await fetch(scriptURL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "order",
-      orderId: orderId,
-      tableNumber: table,
-      items: lines.join("\n"),
-      total: total
-    })
-  });
+  const body = new URLSearchParams();
+body.append("action", "order");
+body.append("orderId", orderId);
+body.append("tableNumber", table);
+body.append("items", lines.join("\n"));
+body.append("total", String(total));
+
+const res = await fetch(scriptURL, {
+  method: "POST",
+  body
+});
 
   const data = await res.json(); // ⭐ 可以知道後端是否成功
   if (!data.ok) throw new Error(data.error || "order failed");
